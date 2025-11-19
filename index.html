@@ -70,7 +70,7 @@
 
     <div id="ui">
         <div id="score-display">SCORE: 0</div>
-        <div id="weapon-display">WEAPON: MK-1 BLASTER</div>
+        <div id="weapon-display">WEAPON: MK-1 BLASTER (Auto Fire)</div>
     </div>
 
     <div id="game-over">
@@ -96,21 +96,27 @@
     let weaponLevel = 1;
 
     // --- Input Global Variables for Touch/Mobile ---
-    let touchPos = { x: 0, y: 0 };
+    let touchPosX = 0; // Only need X for horizontal movement
     let touchActive = false; // Tracks if a touch is active for movement
-    let isShooting = false; // Tracks if a touch is active for firing
 
-    // Inputs: WASD, Arrow Keys, Space
+    // Inputs: WASD, Arrow Keys, Space (Space is now ignored for auto-fire)
     const keys = { ArrowUp: false, ArrowDown: false, ArrowLeft: false, ArrowRight: false, w: false, a: false, s: false, d: false, " ": false };
 
     window.addEventListener('keydown', (e) => keys[e.key] = true);
     window.addEventListener('keyup', (e) => keys[e.key] = false);
+    
+    // Handle canvas resize to maintain responsiveness
     window.addEventListener('resize', () => {
         canvas.width = window.innerWidth;
         canvas.height = window.innerHeight;
+        // Reset player position on resize to keep it centered horizontally and fixed vertically
+        if(player) {
+            player.x = canvas.width / 2 - player.width / 2;
+            player.y = canvas.height - 100;
+        }
     });
 
-    // --- Touch Event Handlers for Mobile ---
+    // --- Touch Event Handlers for Mobile (Simplified for X-axis movement) ---
     canvas.addEventListener('touchstart', handleTouchStart);
     canvas.addEventListener('touchmove', handleTouchMove);
     canvas.addEventListener('touchend', handleTouchEnd);
@@ -120,42 +126,31 @@
         e.preventDefault();
         // Use the first touch for input tracking
         const touch = e.touches[0]; 
-        touchPos = { x: touch.clientX, y: touch.clientY };
-
-        // Movement is handled by touching the left half of the screen
-        if (touch.clientX < canvas.width / 2) {
-            touchActive = true;
-            isShooting = false; 
-        } 
-        // Shooting is handled by tapping/holding the right half
-        else {
-            isShooting = true;
-            touchActive = false;
-        }
+        touchPosX = touch.clientX;
+        touchActive = true;
     }
 
     function handleTouchMove(e) {
         e.preventDefault();
         const touch = e.touches[0];
-        // Only update position if we are in movement mode
+        // Only update X position if a touch is active
         if (touchActive) {
-            touchPos = { x: touch.clientX, y: touch.clientY };
+            touchPosX = touch.clientX;
         }
     }
 
     function handleTouchEnd(e) {
         e.preventDefault();
-        // Stop all touch-related input when finger lifts
+        // Stop movement when finger lifts
         touchActive = false;
-        isShooting = false;
     }
 
     // --- Classes ---
 
     class Player {
         constructor() {
-            this.x = canvas.width / 2;
-            this.y = canvas.height - 100;
+            this.x = canvas.width / 2 - 20; // Centered
+            this.y = canvas.height - 100; // Fixed near the bottom
             this.width = 40;
             this.height = 60;
             this.speed = 6;
@@ -163,36 +158,27 @@
         }
 
         update() {
-            // --- MOVEMENT LOGIC (Touch Priority) ---
+            // --- MOVEMENT LOGIC ---
             if (touchActive) {
-                // Ship moves toward the current touch position (Follow/Drag style)
-                const targetX = touchPos.x - this.width / 2;
-                const targetY = touchPos.y - this.height / 2;
-
-                const dx = targetX - this.x;
-                const dy = targetY - this.y;
-                const distance = Math.sqrt(dx * dx + dy * dy);
-
-                if (distance > 1) { 
-                    // Calculate normalized velocity and cap it at player speed
-                    const velocityX = Math.min(Math.abs(dx), this.speed) * Math.sign(dx);
-                    const velocityY = Math.min(Math.abs(dy), this.speed) * Math.sign(dy);
-
-                    this.x += velocityX;
-                    this.y += velocityY;
-                }
+                // Horizontal Drag: Move ship's center towards the touch X position
+                const targetX = touchPosX - this.width / 2;
+                
+                // Smooth horizontal transition for better feel on touch
+                this.x += (targetX - this.x) * 0.2; 
+                
             } else {
-                // Keyboard movement fallback
-                if ((keys.ArrowUp || keys.w) && this.y > 0) this.y -= this.speed;
-                if ((keys.ArrowDown || keys.s) && this.y < canvas.height - this.height) this.y += this.speed;
+                // Keyboard movement fallback (Only Left/Right affects position)
                 if ((keys.ArrowLeft || keys.a) && this.x > 0) this.x -= this.speed;
                 if ((keys.ArrowRight || keys.d) && this.x < canvas.width - this.width) this.x += this.speed;
+                
+                // Ignore Up/Down keys to enforce horizontal plane movement
             }
             
+            // Keep player fixed at the bottom of the screen (required for simple horizontal game)
+            this.y = canvas.height - 100;
+
             // Boundary checks
             this.x = Math.max(0, Math.min(this.x, canvas.width - this.width));
-            this.y = Math.max(0, Math.min(this.y, canvas.height - this.height));
-
 
             // Weapon Evolution Logic
             if (score < 500) weaponLevel = 1;
@@ -202,15 +188,15 @@
 
             updateUI();
 
-            // Shooting
-            const isFiring = keys[" "] || isShooting; // Combine spacebar and touch shooting
-            if (isFiring && frame - this.lastShot > this.getFireRate()) {
+            // --- SHOOTING (NOW AUTOMATIC) ---
+            if (frame - this.lastShot > this.getFireRate()) {
                 this.fire();
                 this.lastShot = frame;
             }
         }
 
         getFireRate() {
+            // Fire rate based on weapon level
             if (weaponLevel === 4) return 5; // Fastest firing rate
             return 15;
         }
@@ -459,10 +445,10 @@
 
     function updateUI() {
         document.getElementById('score-display').innerText = "SCORE: " + score;
-        let wName = "MK-1 BLASTER";
-        if(weaponLevel === 2) wName = "MK-2 TWIN-FIRE";
-        if(weaponLevel === 3) wName = "MK-3 TRI-SPREAD";
-        if(weaponLevel === 4) wName = "MK-4 PLASMA STREAM";
+        let wName = "MK-1 BLASTER (Auto Fire)";
+        if(weaponLevel === 2) wName = "MK-2 TWIN-FIRE (Auto Fire)";
+        if(weaponLevel === 3) wName = "MK-3 TRI-SPREAD (Auto Fire)";
+        if(weaponLevel === 4) wName = "MK-4 PLASMA STREAM (Auto Fire)";
         document.getElementById('weapon-display').innerText = "WEAPON: " + wName;
     }
 
@@ -480,6 +466,7 @@
         gameOver = false;
         weaponLevel = 1;
         document.getElementById('game-over').style.display = 'none';
+        document.body.style.cursor = 'default'; // Ensure cursor is normal on desktop
 
         // Create stars for the background
         for(let i=0; i<100; i++) stars.push(new Star());
