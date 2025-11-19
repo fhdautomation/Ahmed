@@ -10,6 +10,8 @@
             overflow: hidden;
             background-color: #050505;
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            /* Prevents selection and context menus on touch devices */
+            touch-action: none; 
         }
         canvas {
             display: block;
@@ -93,6 +95,11 @@
     let frame = 0;
     let weaponLevel = 1;
 
+    // --- Input Global Variables for Touch/Mobile ---
+    let touchPos = { x: 0, y: 0 };
+    let touchActive = false; // Tracks if a touch is active for movement
+    let isShooting = false; // Tracks if a touch is active for firing
+
     // Inputs: WASD, Arrow Keys, Space
     const keys = { ArrowUp: false, ArrowDown: false, ArrowLeft: false, ArrowRight: false, w: false, a: false, s: false, d: false, " ": false };
 
@@ -102,6 +109,46 @@
         canvas.width = window.innerWidth;
         canvas.height = window.innerHeight;
     });
+
+    // --- Touch Event Handlers for Mobile ---
+    canvas.addEventListener('touchstart', handleTouchStart);
+    canvas.addEventListener('touchmove', handleTouchMove);
+    canvas.addEventListener('touchend', handleTouchEnd);
+    canvas.addEventListener('touchcancel', handleTouchEnd);
+
+    function handleTouchStart(e) {
+        e.preventDefault();
+        // Use the first touch for input tracking
+        const touch = e.touches[0]; 
+        touchPos = { x: touch.clientX, y: touch.clientY };
+
+        // Movement is handled by touching the left half of the screen
+        if (touch.clientX < canvas.width / 2) {
+            touchActive = true;
+            isShooting = false; 
+        } 
+        // Shooting is handled by tapping/holding the right half
+        else {
+            isShooting = true;
+            touchActive = false;
+        }
+    }
+
+    function handleTouchMove(e) {
+        e.preventDefault();
+        const touch = e.touches[0];
+        // Only update position if we are in movement mode
+        if (touchActive) {
+            touchPos = { x: touch.clientX, y: touch.clientY };
+        }
+    }
+
+    function handleTouchEnd(e) {
+        e.preventDefault();
+        // Stop all touch-related input when finger lifts
+        touchActive = false;
+        isShooting = false;
+    }
 
     // --- Classes ---
 
@@ -116,11 +163,36 @@
         }
 
         update() {
-            // Movement
-            if ((keys.ArrowUp || keys.w) && this.y > 0) this.y -= this.speed;
-            if ((keys.ArrowDown || keys.s) && this.y < canvas.height - this.height) this.y += this.speed;
-            if ((keys.ArrowLeft || keys.a) && this.x > 0) this.x -= this.speed;
-            if ((keys.ArrowRight || keys.d) && this.x < canvas.width - this.width) this.x += this.speed;
+            // --- MOVEMENT LOGIC (Touch Priority) ---
+            if (touchActive) {
+                // Ship moves toward the current touch position (Follow/Drag style)
+                const targetX = touchPos.x - this.width / 2;
+                const targetY = touchPos.y - this.height / 2;
+
+                const dx = targetX - this.x;
+                const dy = targetY - this.y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+
+                if (distance > 1) { 
+                    // Calculate normalized velocity and cap it at player speed
+                    const velocityX = Math.min(Math.abs(dx), this.speed) * Math.sign(dx);
+                    const velocityY = Math.min(Math.abs(dy), this.speed) * Math.sign(dy);
+
+                    this.x += velocityX;
+                    this.y += velocityY;
+                }
+            } else {
+                // Keyboard movement fallback
+                if ((keys.ArrowUp || keys.w) && this.y > 0) this.y -= this.speed;
+                if ((keys.ArrowDown || keys.s) && this.y < canvas.height - this.height) this.y += this.speed;
+                if ((keys.ArrowLeft || keys.a) && this.x > 0) this.x -= this.speed;
+                if ((keys.ArrowRight || keys.d) && this.x < canvas.width - this.width) this.x += this.speed;
+            }
+            
+            // Boundary checks
+            this.x = Math.max(0, Math.min(this.x, canvas.width - this.width));
+            this.y = Math.max(0, Math.min(this.y, canvas.height - this.height));
+
 
             // Weapon Evolution Logic
             if (score < 500) weaponLevel = 1;
@@ -131,7 +203,8 @@
             updateUI();
 
             // Shooting
-            if (keys[" "] && frame - this.lastShot > this.getFireRate()) {
+            const isFiring = keys[" "] || isShooting; // Combine spacebar and touch shooting
+            if (isFiring && frame - this.lastShot > this.getFireRate()) {
                 this.fire();
                 this.lastShot = frame;
             }
